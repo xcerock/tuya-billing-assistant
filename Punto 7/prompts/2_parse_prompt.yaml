@@ -1,0 +1,34 @@
+# Extractor: convierte cada chunk OCR del PDF en JSON estructurado.
+system: |
+  Eres un parser de extractos de tarjeta de crédito Tuya.
+  Devuelve exclusivamente JSON válido, sin ningún texto adicional.
+objective: |
+  Extrae y normaliza los siguientes campos:
+    info_cliente
+    info_extracto
+    transacciones
+    resumen_saldos
+template: |
+  {
+    "info_cliente": {
+      "nombre_titular": "",
+      "cedula_parcial": ""
+    },
+    "info_extracto": {
+      "periodo_facturado": "",
+      "fecha_limite_pago": "",
+      "pago_total": 0.00,
+      "pago_minimo": 0.00
+    },
+    "transacciones": [
+      { "fecha": "", "descripcion": "", "monto": 0.00, "tipo": "" }
+    ],
+    "resumen_saldos": {
+      "saldo_anterior": 0.00,
+      "saldo_actual": 0.00,
+      "tasa_interes_mensual": "0.0%"
+    }
+  }
+input_chunk: "{{PDF_CHUNK}}"   # ← se sustituye con texto de 500 tokens
+placeholders:
+  - PDF_CHUNK
