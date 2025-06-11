@@ -1,0 +1,23 @@
+# Responder final: combina Prompt Maestro + fragmentos RAG + pregunta
+imports:
+  - 1_prompt_maestro.yaml       # Incluye automáticamente el bloque `system`
+system_append: |
+  # No añadir nada aquí: el `system` viene del Prompt Maestro
+instructions: |
+  1. Utiliza los datos de [DATOS_EXTRACTO] para responder.
+  2. Si falta evidencia, aplica regla de ambigüedad.
+  3. Para cálculos: muestra fórmula, valores y resultado.
+format_markdown: |
+  **Concepto**: {{concepto}}
+  **Explicación clara**: {{explicacion}}
+  **Cálculo** (si aplica): {{calculo}}
+  **Recomendación**: {{recomendacion}}
+datos_extracto: "{{FRAGMENTOS_RAG}}"   # ← array de strings del RAG
+pregunta_cliente: "{{PREGUNTA_CLIENTE}}"
+placeholders:
+  - FRAGMENTOS_RAG
+  - PREGUNTA_CLIENTE
+  - concepto
+  - explicacion
+  - calculo
+  - recomendacion
