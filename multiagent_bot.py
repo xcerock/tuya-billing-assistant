@@ -157,17 +157,17 @@ class AuditUsageAgent:
 # --- MAIN DEMO ---
 def main():
     base = Path(__file__).parent
-    pdf_dir = base / "PDFs"
+    pdf_dir = base / "PDF"
     # Demo: Punto 6
     print("Punto 6: Prompt seguro")
-    sofia = SofiaAgent(base / "../Punto6/prompts/agent_sofia.yaml")
+    sofia = SofiaAgent(base / "../Punto_6/prompts/agent_sofia.yaml")
     datos = ocr_pdf_vision(pdf_dir / "Punto6_prompt_seguro.pdf")
     out6 = sofia.run(datos, "¿Por qué mi pago mínimo es tan alto?")
     print(out6, "\n")
 
     # Demo: Punto 7 (pipeline completo)
     print("Punto 7: Pipeline PDF → RAG → Sofía")
-    agent7 = PDFChainAgent(base / "../Punto7/prompts/")
+    agent7 = PDFChainAgent(base / "../Punto_7/prompts/")
     out7 = agent7.run(pdf_dir / "Punto7_pipeline_completo.pdf",
                       "¿Por qué me cobraron seguro de compras?")
     print(out7, "\n")
@@ -175,8 +175,8 @@ def main():
     # Demo: Punto 8 (cargo no reconocido, CoT vs directo)
     print("Punto 8: Cargo no reconocido (CoT)")
     agent8 = ChargeExplainerAgent(
-        base / "../Punto8/prompts/1_cot_unrecognized_charge.yaml",
-        base / "../Punto8/prompts/2_direct_unrecognized_charge.yaml"
+        base / "../Punto_8/prompts/1_cot_unrecognized_charge.yaml",
+        base / "../Punto_8/prompts/2_direct_unrecognized_charge.yaml"
     )
     datos8 = ocr_pdf_vision(pdf_dir / "Punto8_cargo_no_reconocido.pdf")
     out8_cot = agent8.run("cot", datos8, "¿Qué es este cargo de $300.000?")
