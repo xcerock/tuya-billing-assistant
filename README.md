@@ -23,20 +23,20 @@ Test_tuya/
 │
 ├── PDF/                        # Extractos de prueba (PDF) para cada punto
 │
-├── Punto_6/prompts/           # Prompt para agente Sofía (respuesta segura)
+├── punto_6/prompts/           # Prompt para agente Sofía (respuesta segura)
 │   └── agent_sofia.yaml
 │
-├── Punto_7/prompts/           # Pipeline completo (OCR → JSON → RAG → Sofía)
+├── punto_7/prompts/           # Pipeline completo (OCR → JSON → RAG → Sofía)
 │   ├── 1_prompt_maestro.yaml
 │   ├── 2_parse_prompt.yaml
 │   ├── 3_rag_prompt.yaml
 │   └── 4_sofia_responder.yaml
 │
-├── Punto_8/prompts/           # Agentes CoT y directos para cargos no reconocidos
+├── punto_8/prompts/           # Agentes CoT y directos para cargos no reconocidos
 │   ├── 1_cot_unrecognized_charge.yaml
 │   └── 2_direct_unrecognized_charge.yaml
 │
-├── Punto_11_prompts/          # Prompt evaluador de uso de IA
+├── punto_11_prompts/          # Prompt evaluador de uso de IA
 │   └── 1_auditoria_ia.yaml
 │
 ├── multiagent_bot.py          # Script principal que ejecuta todos los agentes
@@ -70,7 +70,7 @@ cd tuya-billing-assistant
 ```bash
 python -m venv tuya
 source tuya/bin/activate      # Linux/macOS
-tuya\Scripts\activate.bat  # Windows
+tuya\Scripts\activate         # Windows
 ```
 
 3. Instala dependencias:
@@ -117,5 +117,3 @@ python multiagent_bot.py
 GitHub: [xcerock](https://github.com/xcerock)
 
 ---
-
-Este proyecto demuestra cómo usar ingeniería de prompts y LLMs de manera responsable, clara y estructurada en un entorno realista de facturación. ✨

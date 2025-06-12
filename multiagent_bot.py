@@ -3,7 +3,7 @@ multiagent_bot.py — Tuya Billing Assistant (PDF)
 -------------------------------------------------
 • Extrae texto de PDFs con Google Vision API.
 • Selecciona y ejecuta el agente adecuado para los puntos 6, 7, 8 y 11.
-• Usa prompts YAML desde carpetas Punto6, Punto7, etc.
+• Usa prompts YAML desde carpetas Punto_6, Punto_7, Punto_8 y Punto_11.
 • Requiere: openai, pyyaml, google-cloud-vision, python-dotenv
 """
 
@@ -163,14 +163,14 @@ def main():
     pdf_dir = base / "PDF"
     # Demo: Punto 6
     print("Punto 6: Prompt seguro")
-    sofia = SofiaAgent(base / "Punto_6/prompts/agent_sofia.yaml")
+    sofia = SofiaAgent(base / "punto_6/prompts/agent_sofia.yaml")
     datos = ocr_pdf_vision(pdf_dir / "Punto6_prompt_seguro.pdf")
     out6 = sofia.run(datos, "¿Por qué mi pago mínimo es tan alto?")
     print(out6, "\n")
 
     # Demo: Punto 7 (pipeline completo)
     print("Punto 7: Pipeline PDF → RAG → Sofía")
-    agent7 = PDFChainAgent(base / "Punto_7/prompts/")
+    agent7 = PDFChainAgent(base / "punto_7/prompts/")
     out7 = agent7.run(pdf_dir / "Punto7_pipeline_completo.pdf",
                       "¿Por qué me cobraron seguro de compras?")
     print(out7, "\n")
@@ -178,8 +178,8 @@ def main():
     # Demo: Punto 8 (cargo no reconocido, CoT vs directo)
     print("Punto 8: Cargo no reconocido (CoT)")
     agent8 = ChargeExplainerAgent(
-        base / "Punto_8/prompts/1_cot_unrecognized_charge.yaml",
-        base / "Punto_8/prompts/2_direct_unrecognized_charge.yaml"
+        base / "punto_8/prompts/1_cot_unrecognized_charge.yaml",
+        base / "punto_8/prompts/2_direct_unrecognized_charge.yaml"
     )
     datos8 = ocr_pdf_vision(pdf_dir / "Punto8_cargo_no_reconocido.pdf")
     out8_cot = agent8.run("cot", datos8, "¿Qué es este cargo de $300.000?")
@@ -190,7 +190,7 @@ def main():
 
     # Demo: Punto 11 (auditor de IA generativa)
     print("Punto 11: Auditor uso de IA generativa")
-    auditor = AuditUsageAgent(base / "Punto_11/prompts/1_auditoria_ia.yaml")
+    auditor = AuditUsageAgent(base / "punto_11/prompts/1_auditoria_ia.yaml")
     out11 = auditor.run([out6, out7, out8_cot, out8_dir])
     print(out11, "\n")
 
