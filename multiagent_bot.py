@@ -102,23 +102,26 @@ class PDFChainAgent:
 
     def run(self, pdf_path: Path, pregunta: str) -> str:
         texto = ocr_pdf_vision(pdf_path)
+        print("\n[OCR Output]:\n", texto)
         # 1. Parsear el texto plano a JSON
         parser_tpl = self.prompts["parser"]
         parser_prompt = parser_tpl["system"] + "\n" + \
                         parser_tpl["objective"] + "\n" + \
                         parser_tpl["template"].replace("{{PDF_CHUNK}}", texto)
         datos_json = call_openai(parser_prompt, max_tokens=700)
+        print("\n[Parser Output - JSON]:\n", datos_json)
         # 2. Seleccionar fragmentos con RAG
         rag_tpl = self.prompts["rag"]
         rag_prompt = rag_tpl["system"] + "\n" + rag_tpl["task"]
         rag_prompt = rag_prompt.replace("{{JSON_EXTRACT}}", datos_json)
         rag_prompt = rag_prompt.replace("{{PREGUNTA_CLIENTE}}", pregunta)
         fragmentos = call_openai(rag_prompt, max_tokens=400)
+        print("\n[RAG Output - Fragmentos]:\n", fragmentos)
         # 3. Responder con Sofía
         responder_tpl = self.prompts["responder"]
         prompt_final = responder_tpl["instructions"] + \
-                       "\n[DATOS_EXTRACTO]\n" + fragmentos + \
-                       "\n[PREGUNTA_CLIENTE]\n" + pregunta
+                    "\n[DATOS_EXTRACTO]\n" + fragmentos + \
+                    "\n[PREGUNTA_CLIENTE]\n" + pregunta
         return call_openai(prompt_final, responder_tpl.get("system", ""))
 
 # --- AGENTE 3: Cargo no reconocido, con y sin CoT (Punto 8) ---
@@ -182,12 +185,12 @@ def main():
     out8_cot = agent8.run("cot", datos8, "¿Qué es este cargo de $300.000?")
     print(out8_cot, "\n")
     print("Punto 8: Cargo no reconocido (directo)")
-    out8_dir = agent8.run("direct", datos8, "¿Qué es este cargo de $300.000?")
+    out8_dir = agent8.run("direct", datos8, "¿Qué es este cargo de $300.000 el 15/06/2025?")
     print(out8_dir, "\n")
 
     # Demo: Punto 11 (auditor de IA generativa)
     print("Punto 11: Auditor uso de IA generativa")
-    auditor = AuditUsageAgent(base / "Punto11/prompts/1_auditoria_ia.yaml")
+    auditor = AuditUsageAgent(base / "Punto_11/prompts/1_auditoria_ia.yaml")
     out11 = auditor.run([out6, out7, out8_cot, out8_dir])
     print(out11, "\n")
 

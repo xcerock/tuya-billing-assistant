@@ -1,34 +1,61 @@
-# Extractor: convierte cada chunk OCR del PDF en JSON estructurado.
 system: |
-  Eres un parser de extractos de tarjeta de crédito Tuya.
-  Devuelve exclusivamente JSON válido, sin ningún texto adicional.
+  Eres un asistente experto en procesar extractos bancarios. Tu tarea es extraer información clave y estructurarla como JSON limpio, sin asumir datos no presentes.
+
 objective: |
-  Extrae y normaliza los siguientes campos:
-    info_cliente
-    info_extracto
-    transacciones
-    resumen_saldos
+  Extrae del texto plano los siguientes elementos y organízalos en el formato solicitado:
+
+  1. info_cliente: nombre del titular y últimos 4 dígitos de la tarjeta (si aparecen).
+  2. info_extracto: periodo facturado, fecha límite de pago, pago total, pago mínimo.
+  3. transacciones: cada transacción debe tener fecha, descripción y valor numérico.
+  4. resumen_saldos: saldo anterior, saldo actual (si está), tasa de interés mensual.
+
+  Si un dato no aparece en el texto, déjalo como cadena vacía ("") o lista vacía ([]).
+  Usa el siguiente esquema JSON como plantilla.
+
 template: |
+  Extrae y devuelve un JSON estructurado así:
+
+  ```json
   {
     "info_cliente": {
-      "nombre_titular": "",
-      "cedula_parcial": ""
+      "nombre_titular": "{{nombre}}",
+      "cedula_parcial": "{{****4321}}"
     },
     "info_extracto": {
-      "periodo_facturado": "",
-      "fecha_limite_pago": "",
-      "pago_total": 0.00,
-      "pago_minimo": 0.00
+      "periodo_facturado": "{{abril-mayo 2025}}",
+      "fecha_limite_pago": "{{15/06/2025}}",
+      "pago_total": "{{870000}}",
+      "pago_minimo": "{{92000}}"
     },
     "transacciones": [
-      { "fecha": "", "descripcion": "", "monto": 0.00, "tipo": "" }
+      {
+        "fecha": "12/05/2025",
+        "descripcion": "Spotify",
+        "valor": 29900
+      },
+      {
+        "fecha": "13/05/2025",
+        "descripcion": "Uber Eats",
+        "valor": 59000
+      },
+      {
+        "fecha": "",
+        "descripcion": "Cuota de manejo",
+        "valor": 17900
+      },
+      {
+        "fecha": "",
+        "descripcion": "Seguro compras",
+        "valor": 32000
+      }
     ],
     "resumen_saldos": {
-      "saldo_anterior": 0.00,
-      "saldo_actual": 0.00,
-      "tasa_interes_mensual": "0.0%"
+      "saldo_anterior": "{{320000}}",
+      "saldo_actual": "{{870000}}",
+      "tasa_interes_mensual": "{{2.3%}}"
     }
   }
-input_chunk: "{{PDF_CHUNK}}"   # ← se sustituye con texto de 500 tokens
-placeholders:
-  - PDF_CHUNK
+  ```
+
+  Texto del extracto:
+  {{PDF_CHUNK}}
