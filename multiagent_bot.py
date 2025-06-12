@@ -1,185 +1,195 @@
-"""multiagent_bot.py — Multi-agente Tuya Billing Assistant
-======================================================
-Resuelve los requisitos de los Puntos 6, 7, 8 y 11 de la prueba.
-
-Estructura de carpetas esperada en el repo
-└── Punto6/prompts/agent_sofia.yaml
-└── Punto7/prompts/{1_-4_*.yaml}
-└── Punto8/prompts/{1_cot_unrecognized_charge.yaml,
-                  2_direct_unrecognized_charge.yaml}
-└── Punto11/prompts/1_auditoria_ia.yaml
-
-Cada *.yaml define la parte [system] e instrucciones del agente.
-Este script carga cada YAML, forma mensajes para la API de OpenAI
-y expone clases con un método `.run()`.
 """
-from __future__ import annotations
+multiagent_bot.py — Tuya Billing Assistant (PDF)
+-------------------------------------------------
+• Extrae texto de PDFs con Google Vision API.
+• Selecciona y ejecuta el agente adecuado para los puntos 6, 7, 8 y 11.
+• Usa prompts YAML desde carpetas Punto6, Punto7, etc.
+• Requiere: openai, pyyaml, google-cloud-vision, python-dotenv
+"""
 
+import os
 import json
-import pathlib
-import typing as t
+import time
+from pathlib import Path
+from typing import List, Dict, Any
 
-import openai               # pip install openai>=1
-from openai import OpenAI
-from openai.types import ChatCompletion
-from yaml import safe_load
+import yaml
+from openai import OpenAI, OpenAIError, RateLimitError
+from google.cloud import vision_v1
+from google.cloud.vision_v1 import types
+from google.api_core.exceptions import GoogleAPIError
+from dotenv import load_dotenv
 
-# ---------- configuración ---------------------------
-ROOT = pathlib.Path(__file__).resolve().parent
-PROMPTS = {
-    "p6": ROOT / "Punto6" / "prompts" / "agent_sofia.yaml",
-    "p7_master": ROOT / "Punto7" / "prompts" / "1_prompt_maestro.yaml",
-    "p7_parse": ROOT / "Punto7" / "prompts" / "2_parse_prompt.yaml",
-    "p7_rag": ROOT / "Punto7" / "prompts" / "3_rag_prompt.yaml",
-    "p7_reply": ROOT / "Punto7" / "prompts" / "4_sofia_responder.yaml",
-    "p8_cot": ROOT / "Punto8" / "prompts" /
-                 "1_cot_unrecognized_charge.yaml",
-    "p8_direct": ROOT / "Punto8" / "prompts" /
-                   "2_direct_unrecognized_charge.yaml",
-    "p11_audit": ROOT / "Punto11" / "prompts" /
-                  "1_auditoria_ia.yaml",
-}
-MODEL = "gpt-4o-mini"
+# Carga variables de entorno
+load_dotenv()
 
-# ---------- utilidades --------------------------------
-
-def load_yaml(path: pathlib.Path) -> dict[str, str]:
-    """Carga un archivo YAML y devuelve un dict."""
-    if not path.exists():
-        raise FileNotFoundError(f"Prompt no encontrado: {path}")
-    return safe_load(path.read_text(encoding="utf‑8"))
-
-
-def make_messages(prompt: dict[str, str], variables: dict[str, str]) -> list[dict]:
-    """Sustituye placeholders {{var}} y construye los mensajes."""
-    msg_system = prompt.get("system", "")
-    for k, v in variables.items():
-        placeholder = f"{{{{{k}}}}}"  # {{var}}
-        msg_system = msg_system.replace(placeholder, v)
-    msgs = [
-        {"role": "system", "content": msg_system}
+# --- UTILIDAD: OCR usando Google Vision API ---
+def ocr_pdf_vision(pdf_path: Path) -> str:
+    """Extrae texto de un PDF usando Google Cloud Vision API."""
+    client = vision_v1.ImageAnnotatorClient()
+    with pdf_path.open("rb") as f:
+        content = f.read()
+    input_config = types.InputConfig(
+        content=content, mime_type="application/pdf"
+    )
+    features = [types.Feature(type_=vision_v1.Feature.Type.DOCUMENT_TEXT_DETECTION)]
+    requests = [
+        types.AnnotateFileRequest(
+            input_config=input_config, features=features
+        )
     ]
-    # Otros campos opcionales (instructions, datos, pregunta)
-    for role_key in ("instructions", "datos_extracto",
-                     "pregunta_cliente", "json", "task"):
-        if role_key in prompt:
-            content = prompt[role_key]
-            for k, v in variables.items():
-                content = content.replace(f"{{{{{k}}}}}", v)
-            msgs.append({"role": "user", "content": content})
-    return msgs
+    response = client.batch_annotate_files(requests=requests)
+    text = ""
+    for resp in response.responses:
+        for page_resp in resp.responses:
+            if page_resp.full_text_annotation:
+                text += page_resp.full_text_annotation.text + "\n"
+    return text.strip()
 
+# --- UTILIDAD: Cargar prompt YAML ---
+def load_prompt_yaml(yaml_path: Path) -> Dict[str, Any]:
+    with open(yaml_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
 
-class AgentBase:
-    """Clase base: carga YAML, hace solicitud a la API y devuelve texto."""
+# --- UTILIDAD: Llama a OpenAI API ---
+def call_openai(prompt: str, system_prompt: str = "", max_tokens: int = 400,
+                temperature: float = 0.2) -> str:
+    client = OpenAI()
+    try:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
+        return resp.choices[0].message.content.strip()
+    except RateLimitError:
+        time.sleep(3)
+        return call_openai(prompt, system_prompt, max_tokens, temperature)
+    except OpenAIError as exc:
+        return f"[OpenAI Error]: {exc}"
 
-    def __init__(self, yaml_path: pathlib.Path):
-        self.yaml_path = yaml_path
-        self.prompt_cfg = load_yaml(yaml_path)
-        self.client = OpenAI()
+# --- AGENTE 1: Prompt Seguro para Facturación (Punto 6) ---
+class SofiaAgent:
+    """Agente que responde preguntas de facturación usando prompt seguro."""
+    def __init__(self, prompt_yaml: Path):
+        self.prompt_cfg = load_prompt_yaml(prompt_yaml)
+        self.system = self.prompt_cfg.get("system", "")
+        self.instructions = self.prompt_cfg.get("instructions", "")
 
-    def run(self, **vars: str) -> str:
-        messages = make_messages(self.prompt_cfg, vars)
-        try:
-            response: ChatCompletion = self.client.chat.completions.create(
-                model=MODEL, messages=messages, temperature=0.2,
-            )
-            return response.choices[0].message.content.strip()
-        except Exception as exc:                                # noqa: BLE001
-            return f"⚠️ Error de la API: {exc}"
+    def run(self, datos_extracto: str, pregunta_cliente: str) -> str:
+        prompt = (
+            self.instructions +
+            "\n[DATOS_EXTRACTO]\n" + datos_extracto +
+            "\n[PREGUNTA_CLIENTE]\n" + pregunta_cliente
+        )
+        return call_openai(prompt, self.system)
 
-# ---------- agentes específicos -----------------------
+# --- AGENTE 2: Pipeline PDF → RAG → Respuesta (Punto 7) ---
+class PDFChainAgent:
+    """Agente completo: OCR, parser, RAG, respuesta final Sofía."""
+    def __init__(self, base_dir: Path):
+        self.prompts = {
+            "maestro": load_prompt_yaml(base_dir / "1_prompt_maestro.yaml"),
+            "parser": load_prompt_yaml(base_dir / "2_parse_prompt.yaml"),
+            "rag": load_prompt_yaml(base_dir / "3_rag_prompt.yaml"),
+            "responder": load_prompt_yaml(base_dir / "4_sofia_responder.yaml"),
+        }
 
-class PromptBuilderAgent(AgentBase):
-    """Punto 6: devuelve el prompt base de Sofía."""
+    def run(self, pdf_path: Path, pregunta: str) -> str:
+        texto = ocr_pdf_vision(pdf_path)
+        # 1. Parsear el texto plano a JSON
+        parser_tpl = self.prompts["parser"]
+        parser_prompt = parser_tpl["system"] + "\n" + \
+                        parser_tpl["objective"] + "\n" + \
+                        parser_tpl["template"].replace("{{PDF_CHUNK}}", texto)
+        datos_json = call_openai(parser_prompt, max_tokens=700)
+        # 2. Seleccionar fragmentos con RAG
+        rag_tpl = self.prompts["rag"]
+        rag_prompt = rag_tpl["system"] + "\n" + rag_tpl["task"]
+        rag_prompt = rag_prompt.replace("{{JSON_EXTRACT}}", datos_json)
+        rag_prompt = rag_prompt.replace("{{PREGUNTA_CLIENTE}}", pregunta)
+        fragmentos = call_openai(rag_prompt, max_tokens=400)
+        # 3. Responder con Sofía
+        responder_tpl = self.prompts["responder"]
+        prompt_final = responder_tpl["instructions"] + \
+                       "\n[DATOS_EXTRACTO]\n" + fragmentos + \
+                       "\n[PREGUNTA_CLIENTE]\n" + pregunta
+        return call_openai(prompt_final, responder_tpl.get("system", ""))
 
-    def __init__(self):
-        super().__init__(PROMPTS["p6"])
+# --- AGENTE 3: Cargo no reconocido, con y sin CoT (Punto 8) ---
+class ChargeExplainerAgent:
+    """Explica cargos no reconocidos usando prompt CoT o directo."""
+    def __init__(self, cot_yaml: Path, direct_yaml: Path):
+        self.cot = load_prompt_yaml(cot_yaml)
+        self.direct = load_prompt_yaml(direct_yaml)
 
+    def run(self, modo: str, datos_extracto: str, pregunta: str) -> str:
+        if modo == "cot":
+            tpl = self.cot
+            prompt = tpl["chain_of_thought"] + "\n" + tpl["instructions"]
+            system = tpl["system"]
+        else:
+            tpl = self.direct
+            prompt = tpl["instructions"]
+            system = tpl["system"]
+        prompt = prompt.replace("{{FRAGMENTO_RAG}}", datos_extracto)
+        prompt = prompt.replace("{{PREGUNTA_CLIENTE}}", pregunta)
+        return call_openai(prompt, system)
 
-class PDFExtractionAgent(AgentBase):
-    """Punto 7: orquesta parse → RAG → respuesta utilizando tres YAML."""
+# --- AGENTE 4: Auditor uso de IA (Punto 11) ---
+class AuditUsageAgent:
+    """Evalúa si cada respuesta fue generada por IA."""
+    def __init__(self, auditor_yaml: Path):
+        self.tpl = load_prompt_yaml(auditor_yaml)
 
-    def __init__(self):
-        self.parse = AgentBase(PROMPTS["p7_parse"])
-        self.rag = AgentBase(PROMPTS["p7_rag"])
-        self.reply = AgentBase(PROMPTS["p7_reply"])
-        self.master = load_yaml(PROMPTS["p7_master"])
-        self.client = OpenAI()
+    def run(self, respuestas: List[str]) -> str:
+        joined = "\n---\n".join(respuestas)
+        prompt = self.tpl["instructions"].replace(
+            "{{RESPUESTAS_CANDIDATAS}}", joined
+        )
+        return call_openai(prompt, self.tpl.get("system", ""), max_tokens=600)
 
-    def run(self, pdf_text: str, pregunta: str) -> str:
-        # 1) parse JSON
-        json_str = self.parse.run(PDF_CHUNK=pdf_text)
-        # 2) RAG sobre JSON
-        frag = self.rag.run(JSON_EXTRACT=json_str,
-                           PREGUNTA_CLIENTE=pregunta)
-        # 3) respuesta final
-        respuesta = self.reply.run(FRAGMENTOS_RAG=frag,
-                                   PREGUNTA_CLIENTE=pregunta,
-                                   concepto="Cargo",
-                                   explicacion="",
-                                   calculo="",
-                                   recomendacion="")
-        return respuesta
+# --- MAIN DEMO ---
+def main():
+    base = Path(__file__).parent
+    pdf_dir = base / "PDFs"
+    # Demo: Punto 6
+    print("Punto 6: Prompt seguro")
+    sofia = SofiaAgent(base / "../Punto6/prompts/agent_sofia.yaml")
+    datos = ocr_pdf_vision(pdf_dir / "Punto6_prompt_seguro.pdf")
+    out6 = sofia.run(datos, "¿Por qué mi pago mínimo es tan alto?")
+    print(out6, "\n")
 
+    # Demo: Punto 7 (pipeline completo)
+    print("Punto 7: Pipeline PDF → RAG → Sofía")
+    agent7 = PDFChainAgent(base / "../Punto7/prompts/")
+    out7 = agent7.run(pdf_dir / "Punto7_pipeline_completo.pdf",
+                      "¿Por qué me cobraron seguro de compras?")
+    print(out7, "\n")
 
-class CoTExplainerAgent(AgentBase):
-    """Punto 8: expone CoT y directo y permite comparar."""
+    # Demo: Punto 8 (cargo no reconocido, CoT vs directo)
+    print("Punto 8: Cargo no reconocido (CoT)")
+    agent8 = ChargeExplainerAgent(
+        base / "../Punto8/prompts/1_cot_unrecognized_charge.yaml",
+        base / "../Punto8/prompts/2_direct_unrecognized_charge.yaml"
+    )
+    datos8 = ocr_pdf_vision(pdf_dir / "Punto8_cargo_no_reconocido.pdf")
+    out8_cot = agent8.run("cot", datos8, "¿Qué es este cargo de $300.000?")
+    print(out8_cot, "\n")
+    print("Punto 8: Cargo no reconocido (directo)")
+    out8_dir = agent8.run("direct", datos8, "¿Qué es este cargo de $300.000?")
+    print(out8_dir, "\n")
 
-    def __init__(self):
-        self.cot = AgentBase(PROMPTS["p8_cot"])
-        self.direct = AgentBase(PROMPTS["p8_direct"])
+    # Demo: Punto 11 (auditor de IA generativa)
+    print("Punto 11: Auditor uso de IA generativa")
+    auditor = AuditUsageAgent(base / "../Punto11/prompts/1_auditoria_ia.yaml")
+    out11 = auditor.run([out6, out7, out8_cot, out8_dir])
+    print(out11, "\n")
 
-    def run(self, frag: str, pregunta: str) -> tuple[str, str]:
-        """Devuelve (con_cot, sin_cot)."""
-        with_cot = self.cot.run(FRAGMENTO_RAG=frag,
-                                PREGUNTA_CLIENTE=pregunta,
-                                concepto="Cargo")
-        without_cot = self.direct.run(FRAGMENTO_RAG=frag,
-                                      PREGUNTA_CLIENTE=pregunta,
-                                      concepto="Cargo")
-        return with_cot, without_cot
-
-
-class AuditUsageAgent(AgentBase):
-    """Punto 11: estima % de IA generativa en bloques de texto."""
-
-    def __init__(self):
-        super().__init__(PROMPTS["p11_audit"])
-
-    def audit(self, respuestas: list[str]) -> str:
-        joined = "\n\n".join(respuestas)
-        return self.run(FECHA=str(date.today()),
-                        LLM_NAME=MODEL,
-                        RESPUESTAS_CANDIDATAS=joined)
-
-
-# ---------- ejemplo de flujo --------------------------
-
-def ejemplo() -> None:
-    """Demostración end‑to‑end con capturas mínimas."""
-    # 1) Construir prompt maestro Sofía
-    p6 = PromptBuilderAgent()
-    print("\n[P6] Prompt Base →", p6.run())
-
-    # 2) Extraer info del PDF (usamos texto ficticio)
-    pdf_agent = PDFExtractionAgent()
-    fake_pdf = "Saldo anterior 800000 ... Compra Spotify 75100 ..."
-    resp = pdf_agent.run(fake_pdf, "¿Por qué tengo un cobro de $75.100?")
-    print("\n[P7] Respuesta del PDF →", resp)
-
-    # 3) Comparar CoT vs directo
-    cot_agent = CoTExplainerAgent()
-    frag = "{ 'transacciones':[{'fecha':'2025-05-15', 'monto':75100, 'descripcion':'Spotify'}]}"
-    cot, direct = cot_agent.run(frag, "¿Qué es el cargo de $75.100?")
-    print("\n[P8] Con CoT →", cot)
-    print("[P8] Directo →", direct)
-
-    # 4) Auditor de IA
-    auditor = AuditUsageAgent()
-    audit_json = auditor.audit([cot, direct])
-    print("\n[P11] Auditoría →", audit_json)
-
-
-if __name__ == "__main__":  # test rápido
-    ejemplo()
+if __name__ == "__main__":
+    main()
